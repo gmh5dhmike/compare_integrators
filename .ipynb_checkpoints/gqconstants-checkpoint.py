@@ -1,7 +1,6 @@
 from decimal import Decimal, getcontext
 from typing import List
 import math
-import sys
 
 class HighPrecisionGaussInt:
     """
@@ -26,7 +25,7 @@ class HighPrecisionGaussInt:
         self.init(npoints)
     
     def _calculate_pi_high_precision(self) -> Decimal:
-        """Calculate pi to high precision using Machin's formula."""
+        """Calculate pi to high precision using Machin's formula"""
         # pi/4 = 4*arctan(1/5) - arctan(1/239)
         getcontext().prec = self.precision + 10  # Extra precision for intermediate calc
         
@@ -54,12 +53,12 @@ class HighPrecisionGaussInt:
         return pi
     
     def _cos_high_precision(self, x: Decimal) -> Decimal:
-        """Calculate cosine using Taylor series with high precision."""
+        """Calculate cosine using Taylor series"""
         # Reduce x to [0, 2*pi)
         two_pi = 2 * self.PI
         x = x % two_pi
         
-        # Taylor series: cos(x) = 1 - x^2/2! + x^4/4! - ...
+        # Use Taylor series: cos(x) = 1 - x^2/2! + x^4/4! - x^6/6! + ...
         result = Decimal(1)
         term = Decimal(1)
         x_squared = x * x
@@ -75,25 +74,25 @@ class HighPrecisionGaussInt:
         return result
     
     def _abs_decimal(self, x: Decimal) -> Decimal:
-        """Absolute value for Decimal."""
+        """Absolute value for Decimal"""
         return x if x >= 0 else -x
     
     def lege_eval(self, n: int, x: Decimal) -> Decimal:
-        """Evaluate Legendre polynomial P_n(x) using Horner's method."""
+        """Evaluate Legendre polynomial at x using Horner's method"""
         s = self.lcoef[n][n]
         for i in range(n, 0, -1):
             s = s * x + self.lcoef[n][i - 1]
         return s
     
     def lege_diff(self, n: int, x: Decimal) -> Decimal:
-        """Evaluate derivative P_n'(x) using a standard relation."""
+        """Evaluate derivative of Legendre polynomial at x"""
         n_dec = Decimal(n)
         return n_dec * (x * self.lege_eval(n, x) - self.lege_eval(n - 1, x)) / (x * x - Decimal(1))
     
     def init(self, npoints: int):
         """
         Calculates abscissas and weights to high precision
-        for n-point quadrature rule.
+        for n-point quadrature rule
         """
         # Initialize arrays
         self.lroots = [Decimal(0)] * npoints
@@ -105,12 +104,10 @@ class HighPrecisionGaussInt:
         self.lcoef[1][1] = Decimal(1)
         
         # Generate Legendre polynomial coefficients using recurrence relation
-        # (n+1)P_{n+1}(x) = (2n+1)xP_n(x) - nP_{n-1}(x)
         for n in range(2, npoints + 1):
             n_dec = Decimal(n)
             n_minus_1 = Decimal(n - 1)
             
-            # Constant term
             self.lcoef[n][0] = -n_minus_1 * self.lcoef[n - 2][0] / n_dec
             
             for i in range(1, n + 1):
@@ -122,17 +119,20 @@ class HighPrecisionGaussInt:
         eps = Decimal(10) ** -(self.precision - 5)  # High precision tolerance
         
         for i in range(1, npoints + 1):
-            # Initial guess using asymptotic formula:
-            # x ≈ cos(π * (i - 0.25) / (npoints + 0.5))
+            # Initial guess using asymptotic formula
             i_dec = Decimal(i)
             npoints_dec = Decimal(npoints)
+            
+            # x = cos(π * (i - 0.25) / (npoints + 0.5))
             angle = self.PI * (i_dec - Decimal('0.25')) / (npoints_dec + Decimal('0.5'))
             x = self._cos_high_precision(angle)
             
             # Newton-Raphson iteration
             max_iterations = 100
-            for _ in range(max_iterations):
+            for iteration in range(max_iterations):
                 x1 = x
+                
+                # Newton-Raphson step: x_new = x - f(x)/f'(x)
                 f_val = self.lege_eval(npoints, x)
                 f_prime = self.lege_diff(npoints, x)
                 
@@ -148,12 +148,12 @@ class HighPrecisionGaussInt:
             # Store root
             self.lroots[i - 1] = x
             
-            # Calculate weight: w_i = 2 / ((1 - x_i^2) [P_n'(x_i)]^2)
+            # Calculate weight
             x1 = self.lege_diff(npoints, x)
             self.weight[i - 1] = Decimal(2) / ((Decimal(1) - x * x) * x1 * x1)
 
     def PrintWA(self):
-        """Print weights and abscissas."""
+        # Print results with high precision
         print(f"==== {len(self.weight)} ====")
         for i in range(len(self.weight)):
             print(f"Weight: {self.weight[i]}")
@@ -162,60 +162,41 @@ class HighPrecisionGaussInt:
     
     def integ(self, f, a: float, b: float) -> Decimal:
         """
-        Integrate function f from a to b using Gaussian quadrature.
-
-        Parameters
-        ----------
-        f : callable
-            Function f(x) accepting a float and returning a float (or Decimal).
-        a, b : float
-            Integration limits.
-
-        Returns
-        -------
-        Decimal
-            High-precision approximation to ∫_a^b f(x) dx.
+        Integrate function f from a to b using Gaussian quadrature
         """
-        # Convert endpoints to Decimal
         a_dec = Decimal(str(a))
         b_dec = Decimal(str(b))
+        
+        c1 = (b_dec - a_dec) / Decimal(2)
+        c2 = (b_dec + a_dec) / Decimal(2)
+        sum_val = Decimal(0)
+        
+        for i in range(len(self.weight)):
+            # Convert to float for function evaluation, then back to Decimal
+            x_eval = float(c1 * self.lroots[i] + c2)
+            f_val = Decimal(str(f(x_eval)))
+            sum_val += self.weight[i] * f_val
+        
+        return c1 * sum_val
 
-        # Affine map from [-1,1] to [a,b]:
-        # x_phys = c1 * ξ + c2,   where ξ ∈ [-1,1]
-        c1 = (b_dec - a_dec) / Decimal(2)   # half-width
-        c2 = (b_dec + a_dec) / Decimal(2)   # midpoint
+    def integ(self, f, a: float, b: float) -> Decimal:
+        """
+        Integrate function f from a to b using Gaussian quadrature
+        """
+        
+        ### complete code here ###
+    
+        return 0  # integral of function f
 
-        total = Decimal(0)
-        for w, xi in zip(self.weight, self.lroots):
-            # Map quadrature node to physical x
-            x_phys = c1 * xi + c2
-
-            # Evaluate f in double precision, cast to Decimal
-            fx = Decimal(str(f(float(x_phys))))
-            total += w * fx
-
-        # Multiply by half-width factor
-        return c1 * total
-
-
+    
 # Example usage and testing
 if __name__ == "__main__":
-    # order from command line (default 10)
-    if len(sys.argv) == 1:
-        order = 10
+    import sys
+    # Create high precision integrator
+    if len(sys.argv)==1: order=10
     else:
-        order = int(sys.argv[1])
-
+        order=int(sys.argv[1])
     print(f"Creating {order}-point Gaussian quadrature with high precision...")
     gauss_hp = HighPrecisionGaussInt(order, precision=40)
     gauss_hp.PrintWA()
-
-    # Simple test: ∫_0^π sin(x) dx = 2
-    def f_test(x):
-        return math.sin(x)
-
-    I_exact = Decimal("2.0")
-    I_num = gauss_hp.integ(f_test, 0.0, math.pi)
-    print("Test integral ∫_0^π sin(x) dx")
-    print("  Gaussian result:", I_num)
-    print("  Abs error      :", abs(I_num - I_exact))
+    
